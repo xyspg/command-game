@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html class="h-full" data-theme="light">
+  <head>
+    <title>指令游戏</title>
+    <script src="/socket.io/socket.io.js"></script>
+
+    <link
+      href="https://cdn.jsdelivr.net/npm/daisyui@2.51.5/dist/full.css"
+      rel="stylesheet"
+      type="text/css"
+    />
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <script>
+      document.addEventListener('DOMContentLoaded', () => {
+        const socket = io();
+
+        //离线警告
+        const offlineWarning = document.createElement('div');
+        offlineWarning.textContent = '正在尝试重连......';
+        offlineWarning.className =
+          'fixed top-0 left-0 w-full p-4 bg-red-600 text-white font-bold text-center z-50';
+        offlineWarning.style.display = 'none';
+        document.body.appendChild(offlineWarning);
+
+        socket.on('connect', () => {
+          offlineWarning.style.display = 'none';
+        });
+
+        socket.on('disconnect', () => {
+          offlineWarning.style.display = 'block';
+        });
+
+        //用户名输入
+        let username;
+        const inputContainer = document.getElementById(
+          'playername-input-container'
+        );
+        const input = document.getElementById('playername_input');
+        const submitButton = document.getElementById('submit');
+
+        input.onkeydown = async (event) => {
+          if (event.key === 'Enter') handleSubmit();
+        };
+        submitButton.onclick = handleSubmit;
+
+        function handleSubmit() {
+          username = input.value;
+          socket.emit('join', username);
+        }
+
+        socket.on('welcome', (data) => {
+          document.querySelector('#auth').style.display = 'none';
+
+          //管理员控制面板行为
+          if (data.isAdmin) {
+            document.querySelector('#refresh-commands').style.display = 'block';
+            document.querySelector('#start-game').style.display = 'block';
+            document.querySelector('#command').style.display = 'none';
+            document.querySelector('#command-card').style.display = 'none';
+            document.querySelector('#username').textContent = `控制面板`;
+            document.querySelector('#command-display').style.display = 'block';
+          } else {
+            document.querySelector(
+              '#username'
+            ).textContent = `玩家： ${data.username}`;
+          }
+        });
+
+        socket.on('authentication_failed', () => {
+          inputContainer.classList.add('invalid');
+          setTimeout(() => {
+            inputContainer.classList.remove('invalid');
+          }, 300);
+          location.reload();
+        });
+
+        socket.on('game_started', (userCommands) => {
+          const command = userCommands[username];
+          document.querySelector('#command').textContent = `${command}`;
+        });
+
+        socket.on('commands_refreshed', (userCommands) => {
+          const command = userCommands[username];
+          document.querySelector('#command').textContent = `${command}`;
+        });
+
+        socket.on('user_list_update', (userList) => {
+          const list = document.querySelector('#user-list');
+          list.innerHTML = '';
+          userList.forEach((user) => {
+            const div = document.createElement('div');
+            div.textContent = user;
+            div.className = 'bg-white rounded-md px-2 py-1 shadow-md';
+            list.appendChild(div);
+          });
+        });
+
+        socket.on('user_count_update', (userCount) => {
+          document.querySelector(
+            '#user-count'
+          ).textContent = `在线人数：${userCount}`;
+        });
+
+        socket.on('command_list_update', (userCommands) => {
+          const list = document.querySelector('#table-body');
+          list.innerHTML = '';
+          for (const [user, command] of Object.entries(userCommands)) {
+            document.getElementById(
+              'table-body'
+            ).innerHTML += `<tr><td>${user}</td><td>${command}</td></tr>`;
+          }
+        });
+
+        document.querySelector('#start-game').addEventListener('click', () => {
+          socket.emit('start_game', username);
+        });
+
+        document
+          .querySelector('#refresh-commands')
+          .addEventListener('click', () => {
+            socket.emit('refresh', username);
+          });
+      });
+    </script>
+    <style>
+      @keyframes shake {
+        0% {
+          transform: translateX(0);
+        }
+        25% {
+          transform: translateX(0.5rem);
+        }
+        75% {
+          transform: translateX(-0.5rem);
+        }
+        100% {
+          transform: translateX(0);
+        }
+      }
+
+      .invalid {
+        animation: shake 0.2s ease-in-out 0s 2;
+      }
+    </style>
+  </head>
+  <body class="h-full bg-neutral-300">
+    <div id="auth" class="z-100 h-screen">
+      <div class="flex justify-center items-center">
+        <div class="mt-48">
+          <h1 class="text-4xl font-bold shadow-sm font-mono">
+            Enter your name
+          </h1>
+          <div id="playername-input-container">
+            <input
+              id="playername_input"
+              autofocus
+              type="username"
+              class="mt-4 px-2 py-4 rounded-md bg-neutral-400 outline-neutral-500 w-full opacity-60 border shadow-sm border-slate-300 text-black focus:font-mono"
+            />
+          </div>
+          <button
+            class="mt-4 rounded-md border border-transparent bg-neutral-100 px-4 py-2 text-md font-mono font-medium text-neutral-800 hover:bg-neutral-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-500 focus-visible:ring-offset-2"
+            id="submit"
+          >
+            Confirm
+          </button>
+        </div>
+      </div>
+    </div>
+    <main class="w-[80vw] mx-auto">
+      <div class="flex flex-col gap-4">
+        <h1 class="mt-4 text-2xl font-bold lg:text-4xl" id="username"></h1>
+
+        <!-- 管理员控制面板 -->
+        <button
+          class="btn btn-xs sm:btn-sm md:btn-md lg:btn-lg"
+          id="start-game"
+          style="display: none"
+        >
+          Start Game
+        </button>
+        <button
+          class="btn btn-xs sm:btn-sm md:btn-md lg:btn-lg"
+          id="refresh-commands"
+          style="display: none"
+        >
+          Refresh Commands
+        </button>
+
+        <!-- 当前在线列表 -->
+        <h3 class="text-1xl mb-[-0.5rem] font-bold font-mono">当前在线</h3>
+        <h4
+          class="text-1xl mb-[-0.5rem] font-bold font-mono"
+          id="user-count"
+        ></h4>
+        <div id="user-list" class="flex flex-row flex-wrap gap-2"></div>
+
+        <!-- 指令展示 -->
+        <div id="command-card" class="card w-96 bg-base-100 shadow-xl h-[50vh]">
+          <div class="card-body">
+            <h2 class="text-2xl font-bold text-center" id="command"></h2>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto hidden" id="command-display">
+          <table class="table w-full">
+            <thead>
+              <tr>
+                <th>Player</th>
+                <th>Command</th>
+              </tr>
+            </thead>
+            <tbody id="table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>
